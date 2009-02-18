@@ -1,0 +1,17 @@
+MD5
+===
+
+'Incrementaly index your files'
+
+
+INSTALLATION
+------------
+
+To install this module type the following:
+
+   perl Build.PL
+   ./Build
+   ./Build test
+   ./Build install
+
+
