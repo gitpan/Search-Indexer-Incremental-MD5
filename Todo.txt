@@ -2,7 +2,11 @@
 # This is Todo.txt #
 #------------------#
 
+subs returning some information about the index content
+	entries
+	size
+	generation date
+	...
+
 testing
-	stop word list file
-	
-remove and check command
+	stop word list file (manually run ... OK)

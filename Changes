@@ -1,0 +1,36 @@
+commit 0b50e9bffa844ca24ff1ac4cabad3d0dfdc18094 (refs/heads/master)
+Author: nadim khemir <nkh@cpan.org>
+Date:   Fri Feb 20 01:34:15 2009 +0100
+
+    CHANGED: option definition
+
+commit 2dfd248508422945499258bdb0ea94e3f5bcca6c
+Author: nadim khemir <nkh@cpan.org>
+Date:   Fri Feb 20 00:37:26 2009 +0100
+
+    ADDED: completion script generation
+
+commit 17acd27fd1fa63b9426c1b2568a9f67f752115db
+Author: nadim khemir <nkh@cpan.org>
+Date:   Thu Feb 19 23:29:53 2009 +0100
+
+    ADDED: remove_files
+    ADDED: check_index
+
+commit e65a57776eb40898f3039ec564d5404d53e6adb7
+Author: nadim khemir <nkh@cpan.org>
+Date:   Thu Feb 19 20:39:20 2009 +0100
+
+    CHANGED: split main module to allow proper documentation generation
+
+commit bcfb8295e79f69d081a8ba53aeffb345def94f00
+Author: nadim khemir <nkh@cpan.org>
+Date:   Wed Feb 18 21:24:07 2009 +0100
+
+    FIXED: extension of the id to file lookup database
+
+commit 285aafa64beeea1328ece9953929a9f2eeb53c77
+Author: nadim khemir <nkh@cpan.org>
+Date:   Wed Feb 18 20:46:21 2009 +0100
+
+    ADDED: Initial commit

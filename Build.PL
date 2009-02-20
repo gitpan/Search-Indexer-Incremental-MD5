@@ -8,7 +8,9 @@ my %all_modules ;
 my @split_modules ;
 
 my @pm_files = qw(
-lib/Search/Indexer/Incremental//MD5.pm
+lib/Search/Indexer/Incremental/MD5.pm
+lib/Search/Indexer/Incremental/MD5/Indexer.pm
+lib/Search/Indexer/Incremental/MD5/Searcher.pm
 );
 
 for(@pm_files)
@@ -151,6 +153,7 @@ my $build = $class->new
 		'BerkeleyDB'      => 0,
 		'Digest::MD5'     => 0,
 		'File::Slurp'     => 0,
+		'Term::Bash::Completion::Generator' => 0,
 		},
 		
 	pm_files     => \%all_modules,

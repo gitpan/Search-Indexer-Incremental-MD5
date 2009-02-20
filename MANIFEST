@@ -7,6 +7,8 @@ README
 Todo.txt
 
 lib/Search/Indexer/Incremental/MD5.pm
+lib/Search/Indexer/Incremental/MD5/Indexer.pm
+lib/Search/Indexer/Incremental/MD5/Searcher.pm
 
 t/001_load.t
 t/002_test.t
@@ -23,3 +25,5 @@ xt/author/000_perl_critic.t
 xt/author/perlcriticrc
 
 xt/author/dist/000_prereq.t
+
+scripts/siim

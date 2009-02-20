@@ -1,6 +1,6 @@
 ---
 name: Search-Indexer-Incremental-MD5
-version: 0.01_01
+version: 0.02.6
 author:
   - 'Nadim ibn hamouda el Khemir. <nkh@cpan.org>'
 abstract: Incrementaly index your files
@@ -15,6 +15,7 @@ requires:
   Readonly: 0
   Search::Indexer: 0.75
   Sub::Exporter: 0
+  Term::Bash::Completion::Generator: 0
   Time::HiRes: 0
 build_requires:
   Test::Block: 0
@@ -25,12 +26,12 @@ build_requires:
 provides:
   Search::Indexer::Incremental::MD5:
     file: lib/Search/Indexer/Incremental/MD5.pm
-    version: 0.01_01
+    version: 0.02
   Search::Indexer::Incremental::MD5::Indexer:
-    file: lib/Search/Indexer/Incremental/MD5.pm
+    file: lib/Search/Indexer/Incremental/MD5/Indexer.pm
     version: 0.01
   Search::Indexer::Incremental::MD5::Searcher:
-    file: lib/Search/Indexer/Incremental/MD5.pm
+    file: lib/Search/Indexer/Incremental/MD5/Searcher.pm
     version: 0.01
 generated_by: Module::Build version 0.2808
 meta-spec:
