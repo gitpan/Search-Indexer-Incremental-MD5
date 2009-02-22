@@ -9,7 +9,7 @@ BEGIN
 {
 use Sub::Exporter -setup => 
 	{
-	exports => [ qw(add_files remove_files check_index) ],
+	exports => [ qw() ],
 	groups  => 
 		{
 		all  => [ qw() ],
@@ -25,15 +25,17 @@ $VERSION     = '0.01';
 use List::Util      qw/max/;
 use Time::HiRes     qw/time/;
 use Search::Indexer 0.75;
+use Search::Indexer::Incremental::MD5 ;
 use BerkeleyDB;
 use File::Slurp ;
 use English qw( -no_match_vars ) ;
-use Readonly ;
 
+use Readonly ;
+Readonly my $EMPTY_STRING => q{} ;
 
 =head1 NAME
 
-Search::Indexer::Incremental::MD5::Indexer - Incrementaly index your files
+Search::Indexer::Incremental::MD5::Indexer - Incrementally index your files
 
 =head1 SYNOPSIS
 
@@ -64,7 +66,7 @@ Search::Indexer::Incremental::MD5::Indexer - Incrementaly index your files
 
 =head1 DESCRIPTION
 
-This module implements an incremential text indexer and searcher based on L<Search::Indexer>.
+This module implements an incremental text indexer and searcher based on L<Search::Indexer>.
 
 =head1 DOCUMENTATION
 
@@ -117,14 +119,14 @@ my ($invocant, %arguments) = @_ ;
 my $class = ref($invocant) || $invocant ;
 confess 'Invalid constructor call!' unless defined $class ;
 
-my $index_directory = $arguments{INDEX_DIRECTORY} or croak "Error: index directory missing" ;
+my $index_directory = $arguments{INDEX_DIRECTORY} or croak 'Error: index directory not defined!' ;
 -d $index_directory or mkdir $index_directory or croak "Error: mkdir $index_directory: $!";
 
 Readonly my $ID_TO_METADATA_FILE => 'id_to_docs_metatdata.bdb' ;
 
 # use id_to_docs_metatdata.bdb, to store a lookup from the uniq id 
 # to the document metadata {$doc_id => "$md5\t$path"}
-tie my %id_to_metatdata, 'BerkeleyDB::Hash', 
+tie my %id_to_metatdata, 'BerkeleyDB::Hash',  ## no critic (Miscellanea::ProhibitTies)
 	-Filename => "$index_directory/$ID_TO_METADATA_FILE", 
 	-Flags    => DB_CREATE
 		or croak "Error: opening '$index_directory/$ID_TO_METADATA_FILE': $^E $BerkeleyDB::Error";
@@ -134,9 +136,9 @@ my %path_to_metadata ;
 
 while (my ($id, $document_metadata) = each %id_to_metatdata) 
 	{
-	my ($md5, $path) = split /\t/, $document_metadata ; #todo: use substr
+	my ($md5, $path, $description) = split /\t/smx, $document_metadata ;
 	
-	$path_to_metadata{$path} = {id => $id, MD5 => $md5};
+	$path_to_metadata{$path} = {id => $id, MD5 => $md5, DESCRIPTION => $description};
 	}
 
 return 
@@ -144,10 +146,10 @@ return
 		{
 		INDEXER => new Search::Indexer
 					(
-					dir       => $arguments{INDEX_DIRECTORY} || '.',
+					dir       => $arguments{INDEX_DIRECTORY} || q{.},
 					writeMode => 1,
 					positions => $arguments{USE_POSITIONS},
-					wregex    => $arguments{WORD_REGEX},
+					wregex    => $arguments{WORD_REGEX} || qr/\w+/smx,
 					stopwords => $arguments{STOP_WORDS} || [],
 					) ,
 
@@ -162,10 +164,14 @@ return
 
 #----------------------------------------------------------------------------------------------------------
 
+Readonly my $STATE_ADD_UP_TO_DATE => 0 ;
+Readonly my $STATE_ADD_RE_INDEX => 1 ;
+Readonly my $STATE_ADD_NEW_FILE => 2 ;
+
 sub add_files
 {
 
-=head2 add_files(%named_arguments)
+=head2 add_files($self, %named_arguments)
 
 Adds the contents of the files passed as arguments to the index database. Files already indexed are checked and
 re-indexed only if their content has changed
@@ -174,13 +180,33 @@ I<Arguments> %named_arguments
 
 =over 2 
 
-=item FILES  - Array reference - a list of files to add to the index
+=item FILES - Array reference - a list of files to add to the index. The file can either be a:
 
-=item DONE_ONE_FILE_CALLBACK - sub reference - called everytime a file is handled
+=over 2 
+
+=item Scalar -  The name of the file  to indexed
+
+=item  Hash reference - this is, for example,  useful when you want to index the contents of a tarball 
+
+=over 2 
+
+=item NAME -  The name of the file  to indexed
+
+=item DESCRIPTION -  A user specific description string to be saved within the database
+
+=back
+
+=back
+
+=item MAXIMUM_DOCUMENT_SIZE - Integer - a warning is displayed for document with greater size
+
+=item DONE_ONE_FILE_CALLBACK - sub reference - called every time a file is handled
 
 =over 2 
 
 =item $file_name -  the name of the file re-indexed
+
+=item $file_description -  user specific description of the name
 
 =item $file_info -  Hash reference
 
@@ -195,6 +221,8 @@ I<Arguments> %named_arguments
 =item 1 - file content changed since last index, re-indexed
 
 =back
+
+=item * ID - integer -  document id
 
 =item * TIME - Float -  re_indexing time
 
@@ -220,6 +248,8 @@ I<Returns> - Hash reference keyed on the file name
 
 =back
 
+=item * ID - integer -  document id
+
 =item * TIME - Float -  re-indexing time
 
 =back
@@ -230,36 +260,109 @@ I<Exceptions>
 
 my ($self, %arguments) = @_;
 
+Readonly my $MAXIMUM_SIZE => (300 << 10) ;
+
 my $files = $arguments{FILES} ;
+my $maximum_document_size = $arguments{MAXIMUM_DOCUMENT_SIZE} ||  $MAXIMUM_SIZE ;
 my $callback =  $arguments{DONE_ONE_FILE_CALLBACK} ;
 
 my %file_information ;
 
-FILE:
-foreach my $file (grep {-f } @{$files}) # index files only
+for my $file (@{$files})
 	{
-	next FILE if ($self->{INDEXED_FILES}{$file}++) ;
+	my ($name, $description) = ref $file eq $EMPTY_STRING ? ($file, $file) : ($file->{NAME}, $file->{DESCRIPTION}) ;
 	
-	my $t0 = time;
-	my $file_md5 = Search::Indexer::Incremental::MD5::get_file_MD5($file) ;
-	
-	if ($file_md5 eq ($self->{PATH_TO_METADATA}{$file}{MD5} || 'no_md5_for_the_file')) 
+	if(-f $name) # index files only
 		{
-		$file_information{$file} = {STATE => 0, TIME => (time - $t0)} ;
-		$callback->($file, $file_information{$file}) if $callback ;
-		
-		next FILE ;
+		if(-s $name < $maximum_document_size)
+			{
+			if(! exists $file_information{$name}) # only handle the file once
+				{
+				$file_information{$name} = $self->add_file($name, $description) ;
+				$callback->($name, $description, $file_information{$name}) if $callback ;
+				}
+			}
+		else
+			{
+			carp "'$name' is bigger than $maximum_document_size bytes, skipping!\n" ;
+			}
 		}
+	else
+		{
+		carp "'$name' is not a file, skipping!\n" ;
+		}
+	}
+	
+return \%file_information ;
+}
 
-	my $old_id = $self->{PATH_TO_METADATA}{$file}{id};
-	my $new_id = $old_id || ++$self->{MAX_DOC_ID};
+sub add_file
+{
+
+=head2 add_file($self, $name, $description)
+
+I<Arguments> 
+
+=over 2 
+
+=item $self - 
+
+=item $name -
+
+=item $description
+
+=back
+
+I<Returns> - Hash reference containing
+
+=over 2 
+
+=item * STATE - Boolean -  
+
+=over 2 
+
+=item 0 - up to date, no re-indexing necessary
+
+=item 1 - file content changed since last index, re-indexed
+
+=item 2 - new file
+
+=back
+
+=item * ID - integer -  document id
+
+=item * TIME - Float -  re-indexing time
+
+=back
+
+I<Exceptions>
+
+=cut
+
+my ($self, $name, $description) = @_ ;
+$description = defined $description ? $description : $EMPTY_STRING;
+
+my $t0 = time ;
+my $file_md5 = Search::Indexer::Incremental::MD5::get_file_MD5($name) ;
+
+my $old_id = $self->{PATH_TO_METADATA}{$name}{id};
+my $new_id = $old_id || ++$self->{MAX_DOC_ID};
+
+my $file_information ;
+
+if ($file_md5 eq ($self->{PATH_TO_METADATA}{$name}{MD5} || 'no_md5_for_the_file')) 
+	{
+	$file_information = {STATE => $STATE_ADD_UP_TO_DATE, TIME => (time - $t0), ID => $new_id} ;
+	}
+else
+	{
+	my $state = $STATE_ADD_NEW_FILE ;
 	
-	my $file_contents = read_file($file) ;
-	my $state = 2 ; # new file
-	
+	my $file_contents = read_file($name) ;
+
 	if ($old_id)
 		{
-		$state = 1 ; # re-index file
+		$state = $STATE_ADD_RE_INDEX ;
 		
 		if($self->{USE_POSITIONS})
 			{
@@ -267,19 +370,19 @@ foreach my $file (grep {-f } @{$files}) # index files only
 			}
 		else
 			{
+			my $file_contents = read_file($name) ;
 			$self->{INDEXER}->remove($old_id, $file_contents)   ;
 			}
 		}
 		
 	$self->{INDEXER}->add($new_id, $file_contents);
 	
-	$file_information{$file} = {STATE => $state, TIME => (time - $t0)} ;
+	$self->{ID_TO_METATDATA}{$new_id} = "$file_md5\t$name\t$description" ;
 
-	$self->{ID_TO_METATDATA}{$new_id} = "$file_md5\t$file" ;
-	$callback->($file, $file_information{$file}) if $callback ;
+	$file_information = {STATE => $state, TIME => (time - $t0), ID => $new_id} ;
 	}
-	
-return \%file_information ;
+
+return $file_information ;
 }
 
 #----------------------------------------------------------------------------------------------------------
@@ -289,7 +392,7 @@ sub remove_files
 
 =head2 remove_files(%named_arguments)
 
-removes the contents of the files passed as arguments to the index database.
+removes the contents of the files passed as arguments from the index database.
 
 I<Arguments> %named_arguments
 
@@ -297,11 +400,13 @@ I<Arguments> %named_arguments
 
 =item FILES  - Array reference - a list of files to remove from to the index
 
-=item DONE_ONE_FILE_CALLBACK - sub reference - called everytime a file is handled
+=item DONE_ONE_FILE_CALLBACK - sub reference - called every time a file is handled
 
 =over 2 
 
 =item $file_name -  the name of the file removed
+
+=item $file_description -  description of the file
 
 =item $file_info -  Hash reference
 
@@ -316,6 +421,8 @@ I<Arguments> %named_arguments
 =item 1 - file found and removed
 
 =back
+
+=item * ID - integer -  document id
 
 =item * TIME - Float -  removal time
 
@@ -339,6 +446,8 @@ I<Returns> - Hash reference keyed on the file name
 
 =back
 
+=item * ID - integer -  document id
+
 =item * TIME - Float -  re-indexing time
 
 =back
@@ -352,43 +461,79 @@ my ($self, %arguments) = @_;
 my $files = $arguments{FILES} ;
 my $callback =  $arguments{DONE_ONE_FILE_CALLBACK} ;
 
+Readonly my $STATE_REMOVE_REMOVED => 0 ;
+Readonly my $STATE_REMOVE_NOT_FOUND => 1 ;
+
 my %file_information ;
 
 FILE:
-foreach my $file (grep {-f } @{$files}) # index files only
+foreach my $file (grep {-f } @{$files}) # remove files only
 	{
 	next FILE if ($self->{INDEXED_FILES}{$file}++) ;
 	
 	my $t0 = time;
 
-	my $old_id = $self->{PATH_TO_METADATA}{$file}{id};
+	my $old_id = $self->{PATH_TO_METADATA}{$file}{id} ;
+	my $description = $self->{PATH_TO_METADATA}{$file}{DESCRIPTION} ;
 	
-	my $state = 1 ; # not found
-
+	my $state = $STATE_REMOVE_NOT_FOUND ;
+	
 	if ($old_id)
 		{
-		$state = 0 ; # found and removed
+		$state = $STATE_REMOVE_REMOVED ;
 		
-		delete $self->{ID_TO_METATDATA}{$old_id} ;
+		my $file_contents = $EMPTY_STRING ;
+		$file_contents = read_file($file) if -e $file ;
 		
-		if($self->{USE_POSITIONS})
-			{
-			$self->{INDEXER}->remove($old_id)   ;
-			}
-		else
-			{
-			my $file_contents = '' ;
-			$file_contents = read_file($file) if -e $file ;
-			
-			$self->{INDEXER}->remove($old_id, $file_contents)   ;
-			}
+		$self->remove_document_with_id($old_id, $file_contents) ;
 		}
 		
-	$file_information{$file} = {STATE => $state, TIME => (time - $t0)} ;
-	$callback->($file, $file_information{$file}) if $callback ;
+	$file_information{$file} = {STATE => $state, TIME => (time - $t0), ID => $old_id} ;
+	$callback->($file, $description, $file_information{$file}) if $callback ;
 	}
 	
 return \%file_information ;
+}
+
+#----------------------------------------------------------------------------------------------------------
+
+sub remove_document_with_id
+{
+
+=head2 remove_document_with_id($id, $content)
+
+removes the contents of the files passed as arguments 
+
+I<Arguments> 
+
+=over 2 
+
+=item * $id - The id of the document to remove from the database
+
+=item * $content - The contents of the document or I<undef>
+
+=back
+
+I<Returns> - Nothing
+
+I<Exceptions> - None
+
+=cut
+
+my ($self, $id, $content) = @_ ;
+
+if($self->{USE_POSITIONS})
+	{
+	$self->{INDEXER}->remove($id) ;
+	}
+else
+	{
+	$self->{INDEXER}->remove($id, $content || $EMPTY_STRING) ;
+	}
+	
+delete $self->{ID_TO_METATDATA}{$id} ;
+
+return ;
 }
 
 #----------------------------------------------------------------------------------------------------------
@@ -404,37 +549,15 @@ I<Arguments> %named_arguments
 
 =over 2 
 
-=item DONE_ONE_FILE_CALLBACK - sub reference - called everytime a file is handled
+=item DONE_ONE_FILE_CALLBACK - sub reference - called every time a file is handled
 
 =over 2 
 
-=item $file_name -  the name of the file checkied
+=item $file_name - the name of the file being checked
 
-=item $file_info -  Hash reference
+=item $description - description of the file
 
-=over 2 
-
-=item * STATE - Boolean -  
-
-=over 2 
-
-=item 0 - file found and identical
-
-=item 1 - file found, content is different (needs re-indexing)
-
-=item 2 - file not found
-
-=back
-
-=item * TIME - Float -  check time
-
-=back
-
-=back
-
-=back
-
-I<Returns> - Hash reference keyed on the file name
+=item $file_info -  Hash reference containing
 
 =over 2 
 
@@ -450,11 +573,39 @@ I<Returns> - Hash reference keyed on the file name
 
 =back
 
+=item * ID - integer -  document id
+
 =item * TIME - Float -  check time
 
 =back
 
-I<Exceptions>
+=back
+
+=back
+
+I<Returns> - Hash reference keyed on the file name or nothing in void context
+
+=over 2 
+
+=item * STATE - Boolean -  
+
+=over 2 
+
+=item 0 - file found and identical
+
+=item 1 - file found, content is different (needs re-indexing)
+
+=item 2 - file not found
+
+=back
+
+=item * ID - integer -  document id
+
+=item * TIME - Float -  check time
+
+=back
+
+I<Exceptions> - None
 
 =cut
 
@@ -467,6 +618,9 @@ my %file_information ;
 for my $file (keys %{$self->{PATH_TO_METADATA}})
 	{
 	my $t0 = time;
+	my $id = $self->{PATH_TO_METADATA}{$file}{id} ;
+	my $description = $self->{PATH_TO_METADATA}{$file}{DESCRIPTION} ;
+	
 	my $state = 2 ;
 
 	if(-e $file)
@@ -481,11 +635,69 @@ for my $file (keys %{$self->{PATH_TO_METADATA}})
 			}
 		}
 		
-	$file_information{$file} = {STATE => $state, TIME => (time - $t0)} ;
-	$callback->($file, $file_information{$file}) if $callback ;
+	$file_information{$file} = {STATE => $state, TIME => (time - $t0), ID => $id} ;
+	$callback->($file, $description,$file_information{$file}) if $callback ;
+	
+	delete $file_information{$file} unless defined wantarray ;
 	}
 	
-return \%file_information ;
+if(defined wantarray)
+	{
+	return \%file_information ;
+	}
+else
+	{
+	return ;
+	}
+}
+
+#----------------------------------------------------------------------------------------------------------
+
+sub remove_reference_to_unexisting_documents
+{
+
+=head2 remove_reference_to_unexisting_documents()
+
+Checks the index database contents and remove any reference to  documents that don't exist.
+
+I<Arguments> - None
+
+I<Returns> - Array reference containing the named of the document that don't exist
+
+I<Exceptions> - None
+
+=cut
+
+my ($self, %arguments) = @_;
+
+my $callback =  $arguments{DONE_ONE_FILE_CALLBACK} ;
+
+my @file_references_removed ;
+
+my $t0 = time;
+
+for my $file (keys %{$self->{PATH_TO_METADATA}})
+	{
+	unless(-e $file)
+		{
+		my $id = $self->{PATH_TO_METADATA}{$file}{id};
+		
+		if($self->{USE_POSITIONS})
+			{
+			$self->{INDEXER}->remove($id)   ;
+			}
+		else
+			{
+			$self->{INDEXER}->remove($id, $EMPTY_STRING)   ;
+			}
+			
+		delete $self->{ID_TO_METATDATA}{$id} ;
+		
+		push @file_references_removed, $file ;
+		}
+	}
+	
+return \@file_references_removed;
 }
 
 #----------------------------------------------------------------------------------------------------------

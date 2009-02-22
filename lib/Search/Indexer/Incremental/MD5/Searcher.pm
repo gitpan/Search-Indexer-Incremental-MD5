@@ -9,7 +9,7 @@ BEGIN
 {
 use Sub::Exporter -setup => 
 	{
-	exports => [ qw(search) ],
+	exports => [ qw() ],
 	groups  => 
 		{
 		all  => [ qw() ],
@@ -24,13 +24,14 @@ $VERSION     = '0.01';
 
 use Time::HiRes     qw/time/;
 use Search::Indexer 0.75;
+use Search::Indexer::Incremental::MD5 ;
 use BerkeleyDB;
 use English qw( -no_match_vars ) ;
 use Readonly ;
 
 =head1 NAME
 
-Search::Indexer::Incremental::MD5::Searcher - Search your index your files
+Search::Indexer::Incremental::MD5::Searcher - Search your indexed files
 
 =head1 SYNOPSIS
 
@@ -66,7 +67,7 @@ Search::Indexer::Incremental::MD5::Searcher - Search your index your files
 
 =head1 DESCRIPTION
 
-This module implements an incremential text indexer and searcher based on L<Search::Indexer>.
+This module implements an incremental text indexer and searcher based on L<Search::Indexer>.
 
 =head1 DOCUMENTATION
 
@@ -116,14 +117,14 @@ I<Exceptions> -
 
 my ($class, %arguments) = @_ ;
 
-my $index_directory = $arguments{INDEX_DIRECTORY} or croak "Error: index directory missing" ;
+my $index_directory = $arguments{INDEX_DIRECTORY} or croak 'Error: index directory missing' ;
 -d $index_directory or croak "Error: can't find the index directory '$index_directory': $!";
 
 Readonly my $ID_TO_METADATA_FILE => 'id_to_docs_metatdata.bdb' ;
 
 # use id_to_docs_metatdata.bdb, to store a lookup from the uniq id 
 # to the document metadata {$doc_id => "$md5\t$path"}
-tie my %id_to_metadata, 'BerkeleyDB::Hash', 
+tie my %id_to_metadata, 'BerkeleyDB::Hash',  ## no critic (Miscellanea::ProhibitTies)
 	-Filename => "$index_directory/$ID_TO_METADATA_FILE", 
 	-Flags    => DB_CREATE
 		or croak "Error: opening '$index_directory/$ID_TO_METADATA_FILE': $^E $BerkeleyDB::Error";
@@ -183,26 +184,88 @@ my $search_string = $arguments{SEARCH_STRING} ;
 
 # force Some::Module::Name into "Some::Module::Name" to prevent 
 # interpretation of ':' as a field name by Query::Parser
-$search_string =~ s/(^|\s)([\w]+(?:::\w+)+)(\s|$)/$1"$2"$3/g;
+$search_string =~ s/(^|\s)([\w]+(?:::\w+)+)(\s|$)/$1"$2"$3/smxg;
 
 my $search_results = $self->{INDEXER}->search($search_string, 'implicit_plus');
-
-#~ my $killedWords = join ", ", @{$search_results->{killedWords}};
-#~ $killedWords &&= " (ignoring words : $killedWords)";
-#~ my $regex = $search_results->{regex};
 
 my @matching_files ;
 
 foreach my $matching_id (keys %{$search_results->{scores}}) 
 	{
-	my ($md5, $path) = split "\t", $self->{ID_TO_METADATA}{$matching_id};
-	
-	push @matching_files,
+	if(exists $self->{ID_TO_METADATA}{$matching_id})
 		{
-		SCORE => $search_results->{scores}{$matching_id},
-		PATH => $path,
-		MD5 => $md5,
-		} ;
+		my ($md5, $path, $description) = split qr/\t/smx, $self->{ID_TO_METADATA}{$matching_id};
+		
+		push @matching_files,
+			{
+			SCORE => $search_results->{scores}{$matching_id},
+			PATH => $path,
+			DESCRIPTION => $description,
+			MD5 => $md5,
+			ID => $matching_id,
+			} ;
+		}
+	else
+		{
+		#~ carp "matching id '$matching_id' corresponds to removed document!\n" ;
+		}
+	}
+	
+return \@matching_files ;
+}
+
+#----------------------------------------------------------------------------------------------------------
+
+sub match_description
+{
+
+=head2 match_description(%named_arguments)
+
+search for documents which description matches a regular expression passed as argument. Documents
+without description never match.
+
+I<Arguments> %named_arguments
+
+=over 2 
+
+=item SEARCH_STRING  - regular expression to match with the description field
+
+=back
+
+I<Returns> - Array reference - each entry contains
+
+=over 2 
+
+=item *  PATH - the path to the file
+
+=item *  MD5 - the file MD5 when the indexing was done
+
+=item *  DESCRIPTION - the file description
+
+=back
+
+=cut
+
+my ($self, %arguments) = @_ ;
+
+my $search_string = $arguments{SEARCH_STRING} ;
+
+my @matching_files ;
+
+for my $id (keys %{$self->{ID_TO_METADATA}}) 
+	{
+	my ($md5, $path, $description) = split qr/\t/smx, $self->{ID_TO_METADATA}{$id};
+	
+	if(defined $description && $description =~$search_string)
+		{
+		push @matching_files,
+			{
+			PATH => $path,
+			DESCRIPTION => $description,
+			MD5 => $md5,
+			ID => $id,
+			} ;
+		}
 	}
 	
 return \@matching_files ;

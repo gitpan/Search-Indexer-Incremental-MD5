@@ -5,5 +5,5 @@ lib_sections    = NAME | SYNOPSIS | DESCRIPTION | DOCUMENTATION | SUBROUTINES/ME
 script_sections = NAME | USAGE | OPTIONS | EXIT STATUS | AUTHOR
 
 [Documentation::PodSpelling]
-stop_words = AnnoCPAN CPAN CPAN's CheckOptionNames perldoc
+stop_words = perl md5 tuples regex stopwords MD5 undef metadata siim AnnoCPAN CPAN CPAN's CheckOptionNames perldoc
 

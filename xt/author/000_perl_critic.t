@@ -23,6 +23,7 @@ use Test::Perl::Critic
 		'CodeLayout::ProhibitHardTabs',
 		'CodeLayout::ProhibitTrailingWhitespace' ,
 		'ValuesAndExpressions::ProhibitCommaSeparatedStatements', # too many false positives. See RT #27654
+		'InputOutput::RequireCheckedSyscalls', 
 		], 
 		
 	-profile => 'xt/author/perlcriticrc' ;

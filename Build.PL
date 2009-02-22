@@ -11,6 +11,7 @@ my @pm_files = qw(
 lib/Search/Indexer/Incremental/MD5.pm
 lib/Search/Indexer/Incremental/MD5/Indexer.pm
 lib/Search/Indexer/Incremental/MD5/Searcher.pm
+lib/Search/Indexer/Incremental/MD5/Language/Perl.pm
 );
 
 for(@pm_files)
@@ -142,7 +143,10 @@ my $build = $class->new
 		'Test::Exception' => 0,
 		'Test::NoWarnings' => 0,
 		'Test::Warn' => 0,
+		'Test::Command' => 0,
+		'Directory::Scratch::Structured' => 0,
 		},
+		
 	requires => 
 		{
 		'Readonly'        => 0,
@@ -154,6 +158,9 @@ my $build = $class->new
 		'Digest::MD5'     => 0,
 		'File::Slurp'     => 0,
 		'Term::Bash::Completion::Generator' => 0,
+		'Time::localtime' => 0,
+		'File::stat' => 0,
+		'Getopt::Long' => 0,
 		},
 		
 	pm_files     => \%all_modules,

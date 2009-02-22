@@ -8,18 +8,49 @@ BEGIN
 {
 use Sub::Exporter -setup => 
 	{
-	exports => [ qw(delete_indexing_databases) ],
+	exports => 
+		[
+		qw
+			(
+			delete_indexing_databases
+			show_database_information
+			add_files
+			remove_files
+			check_index
+			search_string
+			)
+		],
+		
 	groups  => 
 		{
-		all  => [ qw() ],
+		all  => [
+			qw
+				(
+				delete_indexing_databases
+				show_database_information
+				add_files
+				remove_files
+				check_index
+				search_string
+				)
+			],
 		}
 	};
 	
 use vars qw ($VERSION);
-$VERSION     = '0.02';
+$VERSION     = '0.04';
 }
 
 #----------------------------------------------------------------------------------------------------------
+
+use File::stat;
+use Time::localtime;
+use BerkeleyDB;
+use List::Util qw/sum/;
+
+use Search::Indexer::Incremental::MD5::Indexer qw() ;
+use Search::Indexer::Incremental::MD5::Searcher qw() ;
+use Search::Indexer::Incremental::MD5::Language::Perl qw(get_perl_word_regex_and_stopwords) ;
 
 use Digest::MD5 ;
 use English qw( -no_match_vars ) ;
@@ -31,7 +62,7 @@ Readonly my $EMPTY_STRING => q{} ;
 
 =head1 NAME
 
-Search::Indexer::Incremental::MD5 - Incrementaly index your files
+Search::Indexer::Incremental::MD5 - Incrementally index your files
 
 =head1 SYNOPSIS
 
@@ -45,7 +76,7 @@ Search::Indexer::Incremental::MD5 - Incrementaly index your files
 		(
 		USE_POSITIONS => 1, 
 		INDEX_DIRECTORY => 'text_index', 
-		get_perl_word_regex_and_stop_words(),
+		get_perl_word_regex_and_stopwords(),
 		) ;
   
   my @files = File::Find::Rule
@@ -67,7 +98,7 @@ Search::Indexer::Incremental::MD5 - Incrementaly index your files
 		(
 		USE_POSITIONS => 1, 
 		INDEX_DIRECTORY => 'text_index', 
-		get_perl_word_regex_and_stop_words(),
+		get_perl_word_regex_and_stopwords(),
 		)
 	} or croak "No full text index found! $@\n" ;
   
@@ -90,7 +121,7 @@ Search::Indexer::Incremental::MD5 - Incrementaly index your files
 
 =head1 DESCRIPTION
 
-This module implements an incremential text indexer and searcher based on L<Search::Indexer>.
+This module implements an incremental text indexer and searcher based on L<Search::Indexer>.
 
 =head1 DOCUMENTATION
 
@@ -103,12 +134,55 @@ query for matches. You can also use the B<siim> command line application install
 
 #----------------------------------------------------------------------------------------------------------
 
+sub show_database_information
+{
+
+=head2 show_database_information($index_directory)
+
+I<Arguments>
+
+=over 2 
+
+=item * $index_directory - location of the index databases
+
+=back
+
+I<Returns> - A hash reference. Keys represent an information field.
+
+I<Exceptions> - Error opening the indexing database
+
+=cut
+
+my ($index_directory) = @_ ;
+
+croak 'Error: index directory not defined!'  unless defined $index_directory ;
+
+Readonly my $ID_TO_METADATA_FILE => 'id_to_docs_metatdata.bdb' ;
+Readonly my $ID_TO_METADATA_FILE_AND_PATH => "$index_directory/$ID_TO_METADATA_FILE" ;
+
+# use id_to_docs_metatdata.bdb, to store a lookup from the uniq id 
+# to the document metadata {$doc_id => "$md5\t$path"}
+tie my %id_to_metatdata, 'BerkeleyDB::Hash', ## no critic (Miscellanea::ProhibitTies)
+	-Filename => $ID_TO_METADATA_FILE_AND_PATH, 
+	-Flags    => DB_CREATE
+		or croak "Error: opening '$ID_TO_METADATA_FILE_AND_PATH': $^E $BerkeleyDB::Error";
+
+return
+	{
+	entries => scalar(keys %id_to_metatdata),
+	size => sum(map {-s} (glob("$index_directory/*.bdb"), $ID_TO_METADATA_FILE_AND_PATH)),
+	update_date => ctime(stat($ID_TO_METADATA_FILE_AND_PATH)->mtime),
+	} ;
+}
+
+#----------------------------------------------------------------------------------------------------------
+
 sub delete_indexing_databases
 {
 
 =head2 delete_indexing_databases($index_directory)
 
-Removes all the index databases from the passed directory
+Removes all the index databases in the passed directory
 
 I<Arguments>
 
@@ -128,10 +202,423 @@ my ($index_directory) = @_ ;
 
 croak "Error: Invalid or undefined index directory!\n" unless defined $index_directory ;
 
-unlink $_ or croak "unlink $_ : $!" foreach glob("$index_directory/*.bdb");
+for my $file_to_remove
+	(
+	"$index_directory/id_to_docs_metadata.bdb",
+	"$index_directory/ixd.bdb",
+	"$index_directory/ixw.bdb",
+	)
+	{
+	unlink $file_to_remove or croak "Error: Can't unlink '$file_to_remove': $!" ;
+	}
 
 return ;
+}
 
+#----------------------------------------------------------------------------------------------------------
+
+sub search_string
+{
+
+=head2 search_string(\%arguments)
+
+Displays all the files matching the search query.
+
+I<Arguments>
+
+=over 2 
+
+=item \%arguments - 
+
+=over 2 
+
+=item  - 
+
+=item $arguments->{perl_mode} - Boolean - Use Perl specific word regex and stopwords
+
+=item $arguments->{stopwords_file} - Optional- Name of the file containing the stopwords to use (overridden by the perl option)
+
+=item $arguments->{index_directory} - The location of the index database
+
+=item $arguments->{use_position} - See L<Sear::Indexer> for a complete documentation
+
+=item $arguments->{search} - String - The search query
+
+=item $arguments->{verbose} - Boolean - Display the document id and score if set
+
+=back
+
+=item $search_string - 
+
+=back
+
+I<Returns> - Nothing
+
+I<Exceptions> - None
+
+=cut
+
+my ($arguments) = @_ ;
+
+my @perl_extra_arguments  ;
+@perl_extra_arguments = get_perl_word_regex_and_stopwords() if($arguments->{perl_mode}) ;
+
+my @stopwords ;
+@stopwords = (STOPWORDS => $arguments->{stopwords_file}) if($arguments->{stopwords_file}) ;
+
+my $searcher 
+	= eval 
+		{
+		Search::Indexer::Incremental::MD5::Searcher->new
+			(
+			INDEX_DIRECTORY => $arguments->{index_directory}, 
+			USE_POSITIONS => $arguments->{use_position}, 
+			WORD_REGEX => qr/\w+/smx,
+			@stopwords ,
+			@perl_extra_arguments,
+			);
+		} or croak "No full text index found! $@\n" ;
+
+my $results  = $searcher->search(SEARCH_STRING => $arguments->{search}) ;
+
+## no critic (ProhibitDoubleSigils)
+my @indexes = map { $_->[0] } 
+				reverse
+					sort { $a->[1] <=> $b->[1] }
+						map { [$_, $results->[$_]{SCORE}] }
+							0 .. $#$results ;
+
+for my $index (@indexes)
+	{
+	my $matching_file = $results->[$index]{PATH} ;
+	
+	if($arguments->{verbose})
+		{
+		print "'$matching_file' [id:'$results->[$index]{ID}] with score $results->[$index]{SCORE}.\n" ;
+		}
+	else
+		{
+		print "$matching_file\n" ;
+		}
+	}
+	
+return ;
+}
+
+#----------------------------------------------------------------------------------------------------------
+
+sub add_files
+{
+
+=head2 add_files(\%arguments, \@files)
+
+Adds files to index, if the files are modified, and displays their name.
+
+I<Arguments>
+
+=over 2 
+
+=item \%arguments - 
+
+=over 2 
+
+=item $arguments->{perl_mode} - Boolean - Use Perl specific word regex and stopwords
+
+=item $arguments->{stopwords_file} - Optional- Name of the file containing the stopwords to use (overridden by the perl option)
+
+=item $arguments->{index_directory} - The location of the index database
+
+=item $arguments->{use_position} - See L<Sear::Indexer> for a complete documentation
+
+=item $arguments->{maximum_document_size} - Integer - Only files with size inferior to this limit will be added
+
+=item $arguments->{verbose} - Boolean - Display the document id and score if set
+
+=back
+
+=item \@files - Files to be added in the index
+
+=back
+
+I<Returns> - Nothing
+
+I<Exceptions> - None
+
+=cut
+
+my ($arguments, $files) = @_ ;
+
+my @perl_extra_arguments  ;
+@perl_extra_arguments = get_perl_word_regex_and_stopwords() if($arguments->{perl_mode}) ;
+
+my @stopwords ;
+@stopwords = (STOPWORDS => $arguments->{stopwords_file}) if($arguments->{stopwords_file}) ;
+
+my $indexer 
+	= Search::Indexer::Incremental::MD5::Indexer->new
+		(
+		INDEX_DIRECTORY => $arguments->{index_directory}, 
+		USE_POSITIONS => $arguments->{use_position}, 
+		WORD_REGEX => qr/\w+/smx,
+		@stopwords,
+		@perl_extra_arguments,
+		) ;
+
+$indexer->add_files
+	(
+	FILES => $files,
+	MAXIMUM_DOCUMENT_SIZE => $arguments->{maximum_document_size},
+	DONE_ONE_FILE_CALLBACK => 
+		sub
+		{
+		my ($file, $description, $file_info) = @_ ;
+		
+		if($file_info->{STATE} == 0)
+			{
+			if($arguments->{verbose})
+				{
+				printf "'$file' [id:$file_info->{ID}] up to date %.3f s.\n", $file_info->{TIME} ;
+				}
+			}
+		elsif($file_info->{STATE} == 1)
+			{
+			if($arguments->{verbose})
+				{
+				printf "'$file' [id:$file_info->{ID}] re-indexed in %.3f s.\n", $file_info->{TIME} ;
+				}
+			else
+				{
+				print "$file\n" ;
+				}
+			}
+		elsif($file_info->{STATE} == 2)
+			{
+			if($arguments->{verbose})
+				{
+				printf "'$file' [id:$file_info->{ID}] new file %.3f s.\n", $file_info->{TIME} ;
+				}
+			else
+				{
+				print "$file\n" ;
+				}
+			}
+		else
+			{
+			croak "Error: Unexpected file '$file' state!\n" ;
+			}
+		}
+	) ;
+
+return
+}
+
+#----------------------------------------------------------------------------------------------------------
+
+sub remove_files
+{
+
+=head2 remove_files(\%arguments, \@files)
+
+Remove the passed files from the index
+
+I<Arguments>
+
+=over 2 
+
+=item $\%arguments -
+
+=over 2 
+
+=item $arguments->{perl_mode} - Boolean - Use Perl specific word regex and stopwords
+
+=item $arguments->{stopwords_file} - Optional- Name of the file containing the stopwords to use (overridden by the perl option)
+
+=item $arguments->{index_directory} - The location of the index database
+
+=item $arguments->{use_position} - See L<Sear::Indexer> for a complete documentation
+
+=item $arguments->{verbose} - Boolean - Display the document id and score if set
+
+=back
+
+=item \@files - Files to be removed
+
+=back
+
+I<Returns> - Nothing
+
+I<Exceptions> - None
+
+=cut
+
+my ($arguments, $files) = @_ ;
+
+my @perl_extra_arguments  ;
+@perl_extra_arguments = get_perl_word_regex_and_stopwords() if($arguments->{perl_mode}) ;
+
+my @stopwords ;
+@stopwords = (STOPWORDS => $arguments->{stopwords_file}) if($arguments->{stopwords_file}) ;
+
+my $indexer 
+	= Search::Indexer::Incremental::MD5::Indexer->new
+		(
+		INDEX_DIRECTORY => $arguments->{index_directory}, 
+		USE_POSITIONS => $arguments->{use_position}, 
+		WORD_REGEX => qr/\w+/smx,
+		@stopwords,
+		@perl_extra_arguments,
+		) ;
+
+$indexer->remove_files
+	(
+	FILES => $files,
+	DONE_ONE_FILE_CALLBACK => 
+		sub
+		{
+		my ($file, $description, $file_info) = @_ ;
+
+		if($file_info->{STATE} == 0)
+			{
+			if($arguments->{verbose})
+				{
+				printf "'$file' [id:$file_info->{ID}] found and identical in %.3f s.\n", $file_info->{TIME} ;
+				}
+			else
+				{
+				print "$file\n" ;
+				}
+			}
+		elsif($file_info->{STATE} == 1)
+			{
+			if($arguments->{verbose})
+				{
+				printf "'$file' [id:$file_info->{ID}] file found, contents differ %.3f s.\n", $file_info->{TIME} ;
+				}
+			else
+				{
+				print "$file\n" ;
+				}
+			}
+		elsif($file_info->{STATE} == 2)
+			{
+			if($arguments->{verbose})
+				{
+				printf "'$file' [id:$file_info->{ID}] not found in %.3f s.\n", $file_info->{TIME} ;
+				}
+			}
+		else
+			{
+			croak "Error: Unexpected file '$file' state!\n" ;
+			}
+		}
+	) ;
+	
+return ;
+}
+
+#----------------------------------------------------------------------------------------------------------
+
+sub check_index
+{
+
+=head2 check_index(\%arguments)
+
+check the files in the index
+
+I<Arguments>
+
+=over 2 
+
+=item \%arguments -
+
+=over 2 
+
+=item $arguments->{perl_mode} - Boolean - Use Perl specific word regex and stopwords
+
+=item $arguments->{stopwords_file} - Optional- Name of the file containing the stopwords to use (overridden by the perl option)
+
+=item $arguments->{index_directory} - The location of the index database
+
+=item $arguments->{use_position} - See L<Sear::Indexer> for a complete documentation
+
+=item $arguments->{verbose} - Boolean - Display the document id and score if set
+
+=back
+
+=back
+
+I<Returns> - Nothing
+
+I<Exceptions> - None
+
+=cut
+
+my ($arguments) = @_ ;
+
+my @perl_extra_arguments  ;
+@perl_extra_arguments = get_perl_word_regex_and_stopwords() if($arguments->{perl_mode}) ;
+
+my @stopwords ;
+@stopwords = (STOPWORDS => $arguments->{stopwords_file}) if($arguments->{stopwords_file}) ;
+
+my $indexer 
+	= Search::Indexer::Incremental::MD5::Indexer->new
+		(
+		INDEX_DIRECTORY => $arguments->{index_directory}, 
+		USE_POSITIONS => $arguments->{use_position}, 
+		WORD_REGEX => qr/\w+/smx,
+		@stopwords,
+		@perl_extra_arguments,
+		) ;
+
+$indexer->check_indexed_files
+	(
+	DONE_ONE_FILE_CALLBACK => 
+		sub
+		{
+		my ($file, $description,$file_info) = @_ ;
+
+		if($file_info->{STATE} == 0)
+			{
+			if($arguments->{verbose})
+				{
+				printf "'$file' [id:$file_info->{ID}] found and identical in %.3f s.\n", $file_info->{TIME} ;
+				}
+			else
+				{
+				print "$file\n" ;
+				}
+			}
+		elsif($file_info->{STATE} == 1)
+			{
+			if($arguments->{verbose})
+				{
+				printf "'$file' [id:$file_info->{ID}] file found, contents differ %.3f s.\n", $file_info->{TIME} ;
+				}
+			else
+				{
+				print "$file\n" ;
+				}
+			}
+		elsif($file_info->{STATE} == 2)
+			{
+			if($arguments->{verbose})
+				{
+				printf "'$file' [id:$file_info->{ID}] not found in %.3f s.\n", $file_info->{TIME} ;
+				}
+			else
+				{
+				print "$file\n" ;
+				}
+			}
+		else
+			{
+			croak "Error: Unexpected file '$file' state!\n" ;
+			}
+		}
+	) ;
+
+return ;
 }
 
 #----------------------------------------------------------------------------------------------------------
@@ -158,9 +645,14 @@ I<Exceptions> - fails if the file can't be open
 =cut
 
 my ($file) = @_ ;
-open(FILE, $file) or croak "Error: Can't open '$file' to compute MD5: $!";
-binmode(FILE);
-return Digest::MD5->new->addfile(*FILE)->hexdigest ;
+open(my $fh, '<', $file) or croak "Error: Can't open '$file' to compute MD5: $!";
+binmode($fh);
+
+my $md5 = Digest::MD5->new->addfile($fh)->hexdigest ;
+
+close $fh or croak 'Error: Can not close file!' ;
+
+return $md5 ;
 }
 
 #----------------------------------------------------------------------------------------------------------
