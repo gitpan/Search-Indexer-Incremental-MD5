@@ -14,7 +14,7 @@ lib/Search/Indexer/Incremental/MD5/Language/Perl.pm
 scripts/siim
 
 t/001_load.t
-t/002_test.t
+t/002_siim.t
 t/test_template
 
 xt/author/000_distribution.t

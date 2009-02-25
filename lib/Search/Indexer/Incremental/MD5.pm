@@ -38,7 +38,7 @@ use Sub::Exporter -setup =>
 	};
 	
 use vars qw ($VERSION);
-$VERSION     = '0.04';
+$VERSION     = '0.05';
 }
 
 #----------------------------------------------------------------------------------------------------------
@@ -113,7 +113,7 @@ Search::Indexer::Incremental::MD5 - Incrementally index your files
   
   for (@indexes)
 	{
-	print "$results->[$_]{PATH} [$results->[$_]{SCORE}].\n" ;
+	print {* STDOUT} "$results->[$_]{PATH} [$results->[$_]{SCORE}].\n" ;
 	}
 	
   $searcher = undef ;
@@ -131,6 +131,10 @@ query for matches. You can also use the B<siim> command line application install
 =head1 SUBROUTINES/METHODS
 
 =cut
+
+#----------------------------------------------------------------------------------------------------------
+
+Readonly my $ID_TO_METADATA_FILE => 'id_to_docs_metadata.bdb' ;
 
 #----------------------------------------------------------------------------------------------------------
 
@@ -157,19 +161,18 @@ my ($index_directory) = @_ ;
 
 croak 'Error: index directory not defined!'  unless defined $index_directory ;
 
-Readonly my $ID_TO_METADATA_FILE => 'id_to_docs_metatdata.bdb' ;
 Readonly my $ID_TO_METADATA_FILE_AND_PATH => "$index_directory/$ID_TO_METADATA_FILE" ;
 
-# use id_to_docs_metatdata.bdb, to store a lookup from the uniq id 
+# use id_to_docs_metadata.bdb, to store a lookup from the uniq id 
 # to the document metadata {$doc_id => "$md5\t$path"}
-tie my %id_to_metatdata, 'BerkeleyDB::Hash', ## no critic (Miscellanea::ProhibitTies)
+tie my %id_to_metadata, 'BerkeleyDB::Hash', ## no critic (Miscellanea::ProhibitTies)
 	-Filename => $ID_TO_METADATA_FILE_AND_PATH, 
 	-Flags    => DB_CREATE
 		or croak "Error: opening '$ID_TO_METADATA_FILE_AND_PATH': $^E $BerkeleyDB::Error";
 
 return
 	{
-	entries => scalar(keys %id_to_metatdata),
+	entries => scalar(grep {defined $id_to_metadata{$_}} keys %id_to_metadata),
 	size => sum(map {-s} (glob("$index_directory/*.bdb"), $ID_TO_METADATA_FILE_AND_PATH)),
 	update_date => ctime(stat($ID_TO_METADATA_FILE_AND_PATH)->mtime),
 	} ;
@@ -204,7 +207,7 @@ croak "Error: Invalid or undefined index directory!\n" unless defined $index_dir
 
 for my $file_to_remove
 	(
-	"$index_directory/id_to_docs_metadata.bdb",
+	"$index_directory/$ID_TO_METADATA_FILE",
 	"$index_directory/ixd.bdb",
 	"$index_directory/ixw.bdb",
 	)
@@ -236,8 +239,6 @@ I<Arguments>
 
 =item $arguments->{perl_mode} - Boolean - Use Perl specific word regex and stopwords
 
-=item $arguments->{stopwords_file} - Optional- Name of the file containing the stopwords to use (overridden by the perl option)
-
 =item $arguments->{index_directory} - The location of the index database
 
 =item $arguments->{use_position} - See L<Sear::Indexer> for a complete documentation
@@ -263,9 +264,6 @@ my ($arguments) = @_ ;
 my @perl_extra_arguments  ;
 @perl_extra_arguments = get_perl_word_regex_and_stopwords() if($arguments->{perl_mode}) ;
 
-my @stopwords ;
-@stopwords = (STOPWORDS => $arguments->{stopwords_file}) if($arguments->{stopwords_file}) ;
-
 my $searcher 
 	= eval 
 		{
@@ -274,12 +272,11 @@ my $searcher
 			INDEX_DIRECTORY => $arguments->{index_directory}, 
 			USE_POSITIONS => $arguments->{use_position}, 
 			WORD_REGEX => qr/\w+/smx,
-			@stopwords ,
 			@perl_extra_arguments,
 			);
 		} or croak "No full text index found! $@\n" ;
 
-my $results  = $searcher->search(SEARCH_STRING => $arguments->{search}) ;
+my $results = $searcher->search(SEARCH_STRING => $arguments->{search}) ;
 
 ## no critic (ProhibitDoubleSigils)
 my @indexes = map { $_->[0] } 
@@ -294,11 +291,11 @@ for my $index (@indexes)
 	
 	if($arguments->{verbose})
 		{
-		print "'$matching_file' [id:'$results->[$index]{ID}] with score $results->[$index]{SCORE}.\n" ;
+		print {* STDOUT} "'$matching_file' [id:$results->[$index]{ID}] with score $results->[$index]{SCORE}.\n" ;
 		}
 	else
 		{
-		print "$matching_file\n" ;
+		print {* STDOUT} "$matching_file\n" ;
 		}
 	}
 	
@@ -366,7 +363,7 @@ my $indexer
 
 $indexer->add_files
 	(
-	FILES => $files,
+	FILES => [sort @{$files}],
 	MAXIMUM_DOCUMENT_SIZE => $arguments->{maximum_document_size},
 	DONE_ONE_FILE_CALLBACK => 
 		sub
@@ -377,29 +374,29 @@ $indexer->add_files
 			{
 			if($arguments->{verbose})
 				{
-				printf "'$file' [id:$file_info->{ID}] up to date %.3f s.\n", $file_info->{TIME} ;
+				printf {* STDOUT} "'$file' [id:$file_info->{ID}] up to date %.3f s.\n", $file_info->{TIME} ;
 				}
 			}
 		elsif($file_info->{STATE} == 1)
 			{
 			if($arguments->{verbose})
 				{
-				printf "'$file' [id:$file_info->{ID}] re-indexed in %.3f s.\n", $file_info->{TIME} ;
+				printf {* STDOUT} "'$file' [id:$file_info->{ID}] re-indexed in %.3f s.\n", $file_info->{TIME} ;
 				}
 			else
 				{
-				print "$file\n" ;
+				print {* STDOUT} "$file\n" ;
 				}
 			}
 		elsif($file_info->{STATE} == 2)
 			{
 			if($arguments->{verbose})
 				{
-				printf "'$file' [id:$file_info->{ID}] new file %.3f s.\n", $file_info->{TIME} ;
+				printf {* STDOUT} "'$file' [id:$file_info->{ID}] new file %.3f s.\n", $file_info->{TIME} ;
 				}
 			else
 				{
-				print "$file\n" ;
+				print {* STDOUT} "$file\n" ;
 				}
 			}
 		else
@@ -481,29 +478,18 @@ $indexer->remove_files
 			{
 			if($arguments->{verbose})
 				{
-				printf "'$file' [id:$file_info->{ID}] found and identical in %.3f s.\n", $file_info->{TIME} ;
+				printf {* STDOUT} "'$file' [id:$file_info->{ID}] removed in  %.3f s.\n", $file_info->{TIME} ;
 				}
 			else
 				{
-				print "$file\n" ;
+				print {* STDOUT} "$file\n" ;
 				}
 			}
 		elsif($file_info->{STATE} == 1)
 			{
 			if($arguments->{verbose})
 				{
-				printf "'$file' [id:$file_info->{ID}] file found, contents differ %.3f s.\n", $file_info->{TIME} ;
-				}
-			else
-				{
-				print "$file\n" ;
-				}
-			}
-		elsif($file_info->{STATE} == 2)
-			{
-			if($arguments->{verbose})
-				{
-				printf "'$file' [id:$file_info->{ID}] not found in %.3f s.\n", $file_info->{TIME} ;
+				printf {* STDOUT} "'$file' not found in %.3f s.\n", $file_info->{TIME} ;
 				}
 			}
 		else
@@ -582,33 +568,33 @@ $indexer->check_indexed_files
 			{
 			if($arguments->{verbose})
 				{
-				printf "'$file' [id:$file_info->{ID}] found and identical in %.3f s.\n", $file_info->{TIME} ;
+				printf {* STDOUT} "'$file' [id:$file_info->{ID}] found and identical in %.3f s.\n", $file_info->{TIME} ;
 				}
 			else
 				{
-				print "$file\n" ;
+				print {* STDOUT} "$file\n" ;
 				}
 			}
 		elsif($file_info->{STATE} == 1)
 			{
 			if($arguments->{verbose})
 				{
-				printf "'$file' [id:$file_info->{ID}] file found, contents differ %.3f s.\n", $file_info->{TIME} ;
+				printf {* STDOUT} "'$file' [id:$file_info->{ID}] file found, contents differ %.3f s.\n", $file_info->{TIME} ;
 				}
 			else
 				{
-				print "$file\n" ;
+				print {* STDOUT} "$file\n" ;
 				}
 			}
 		elsif($file_info->{STATE} == 2)
 			{
 			if($arguments->{verbose})
 				{
-				printf "'$file' [id:$file_info->{ID}] not found in %.3f s.\n", $file_info->{TIME} ;
+				printf {* STDOUT} "'$file' [id:$file_info->{ID}] not found in %.3f s.\n", $file_info->{TIME} ;
 				}
 			else
 				{
-				print "$file\n" ;
+				print {* STDOUT} "$file\n" ;
 				}
 			}
 		else

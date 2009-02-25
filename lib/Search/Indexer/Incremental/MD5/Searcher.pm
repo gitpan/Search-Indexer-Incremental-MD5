@@ -59,7 +59,7 @@ Search::Indexer::Incremental::MD5::Searcher - Search your indexed files
   
   for (@indexes)
 	{
-	print "$results->[$_]{PATH} [$results->[$_]{SCORE}].\n" ;
+	print {* STDOUT} "$results->[$_]{PATH} [$results->[$_]{SCORE}].\n" ;
 	}
 	
   $searcher = undef ;
@@ -120,9 +120,9 @@ my ($class, %arguments) = @_ ;
 my $index_directory = $arguments{INDEX_DIRECTORY} or croak 'Error: index directory missing' ;
 -d $index_directory or croak "Error: can't find the index directory '$index_directory': $!";
 
-Readonly my $ID_TO_METADATA_FILE => 'id_to_docs_metatdata.bdb' ;
+Readonly my $ID_TO_METADATA_FILE => 'id_to_docs_metadata.bdb' ;
 
-# use id_to_docs_metatdata.bdb, to store a lookup from the uniq id 
+# use id_to_docs_metadata.bdb, to store a lookup from the uniq id 
 # to the document metadata {$doc_id => "$md5\t$path"}
 tie my %id_to_metadata, 'BerkeleyDB::Hash',  ## no critic (Miscellanea::ProhibitTies)
 	-Filename => "$index_directory/$ID_TO_METADATA_FILE", 

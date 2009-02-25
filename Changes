@@ -1,4 +1,28 @@
-commit e448a13da5d3819d7e0dce863ada07af56defb1d (refs/heads/master)
+commit c2fcb6c31ee98427e80f7298424e62a25d1ac661 (refs/heads/master)
+Author: nadim khemir <nkh@cpan.org>
+Date:   Wed Feb 25 01:04:13 2009 +0100
+
+    FIXED: documents id are incremented after re-indexing
+    FIXED: typo in database name
+    CHANGED: added files are displayed in sorted order
+    ADDED: siim tests
+
+commit f16c007732325f5670ceadca9a1f21a092bf953b
+Author: nadim khemir <nkh@cpan.org>
+Date:   Tue Feb 24 14:22:00 2009 +0100
+
+    FIXED: removing file that isn't in the database does not display the
+    file name in non verbose mode
+    CHANGED: siim checks that option -i is set
+    CHANGED: refactored siim tests
+
+commit 5b4efe209dfa211af491cbb48df8ccb85085aaff
+Author: nadim khemir <nkh@cpan.org>
+Date:   Tue Feb 24 00:23:23 2009 +0100
+
+    ADDED: script tests
+
+commit e448a13da5d3819d7e0dce863ada07af56defb1d
 Author: nadim khemir <nkh@cpan.org>
 Date:   Sun Feb 22 23:06:26 2009 +0100
 

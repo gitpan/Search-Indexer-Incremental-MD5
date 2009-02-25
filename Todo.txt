@@ -4,29 +4,14 @@
 
 testing
 	stop word list file (manually run ... OK)
-	
+
+remove stop words from searcher creation
+
 --dry_run
 	does nothing but 
 
 --silent option for --check command
---show_description associated with document
-	how do we get the description there to start with
 
-aliasing
-	we want to keep the name of the container and its contents
-	to avoid verifying all files, only yhe container
-	
-	=> better way is to hold extra information in the id_to_docs db
-		- little impact on the interface
-		- better information back to the user
-	
-	$files matching = $indexer->match_desription (qr//)
-	
-	search function should accept callback
-	
-	callback should tell if the current document information is to be added to the returned information
-		=> we can same some memory and cpu time when the display is done through callback
-		
-move perl specific definitions to Search::Indexer::Language::Perl
+move constants to a file that can be used
+	and remove 0, 1, ... from code
 
-removing document when positions == 0 should also remove the entries from the index

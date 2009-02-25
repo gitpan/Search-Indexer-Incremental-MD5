@@ -17,7 +17,7 @@ use Sub::Exporter -setup =>
 	};
 	
 use vars qw ($VERSION);
-$VERSION     = '0.01';
+$VERSION     = '0.02';
 }
 
 #----------------------------------------------------------------------------------------------------------
@@ -122,11 +122,11 @@ confess 'Invalid constructor call!' unless defined $class ;
 my $index_directory = $arguments{INDEX_DIRECTORY} or croak 'Error: index directory not defined!' ;
 -d $index_directory or mkdir $index_directory or croak "Error: mkdir $index_directory: $!";
 
-Readonly my $ID_TO_METADATA_FILE => 'id_to_docs_metatdata.bdb' ;
+Readonly my $ID_TO_METADATA_FILE => 'id_to_docs_metadata.bdb' ;
 
-# use id_to_docs_metatdata.bdb, to store a lookup from the uniq id 
+# use id_to_docs_metadata.bdb, to store a lookup from the uniq id 
 # to the document metadata {$doc_id => "$md5\t$path"}
-tie my %id_to_metatdata, 'BerkeleyDB::Hash',  ## no critic (Miscellanea::ProhibitTies)
+tie my %id_to_metadata, 'BerkeleyDB::Hash',  ## no critic (Miscellanea::ProhibitTies)
 	-Filename => "$index_directory/$ID_TO_METADATA_FILE", 
 	-Flags    => DB_CREATE
 		or croak "Error: opening '$index_directory/$ID_TO_METADATA_FILE': $^E $BerkeleyDB::Error";
@@ -134,7 +134,7 @@ tie my %id_to_metatdata, 'BerkeleyDB::Hash',  ## no critic (Miscellanea::Prohibi
 # build a path  to document metadata lookup
 my %path_to_metadata ;
 
-while (my ($id, $document_metadata) = each %id_to_metatdata) 
+while (my ($id, $document_metadata) = each %id_to_metadata) 
 	{
 	my ($md5, $path, $description) = split /\t/smx, $document_metadata ;
 	
@@ -154,8 +154,8 @@ return
 					) ,
 
 		INDEXED_FILES => {},
-		ID_TO_METATDATA => \%id_to_metatdata,
-		MAX_DOC_ID => max(keys %id_to_metatdata),
+		ID_TO_METADATA => \%id_to_metadata,
+		MAX_DOC_ID => max(keys %id_to_metadata),
 		PATH_TO_METADATA => \%path_to_metadata,
 		USE_POSITIONS => $arguments{USE_POSITIONS} , 
 		INDEX_DIRECTORY => $arguments{INDEX_DIRECTORY}, 
@@ -346,7 +346,7 @@ my $t0 = time ;
 my $file_md5 = Search::Indexer::Incremental::MD5::get_file_MD5($name) ;
 
 my $old_id = $self->{PATH_TO_METADATA}{$name}{id};
-my $new_id = $old_id || ++$self->{MAX_DOC_ID};
+my $new_id = ++$self->{MAX_DOC_ID};
 
 my $file_information ;
 
@@ -366,18 +366,18 @@ else
 		
 		if($self->{USE_POSITIONS})
 			{
-			$self->{INDEXER}->remove($old_id)   ;
+			$self->remove_document_with_id($old_id)   ;
 			}
 		else
 			{
 			my $file_contents = read_file($name) ;
-			$self->{INDEXER}->remove($old_id, $file_contents)   ;
+			$self->remove_document_with_id($old_id, $file_contents)   ;
 			}
 		}
 		
 	$self->{INDEXER}->add($new_id, $file_contents);
 	
-	$self->{ID_TO_METATDATA}{$new_id} = "$file_md5\t$name\t$description" ;
+	$self->{ID_TO_METADATA}{$new_id} = "$file_md5\t$name\t$description" ;
 
 	$file_information = {STATE => $state, TIME => (time - $t0), ID => $new_id} ;
 	}
@@ -531,7 +531,7 @@ else
 	$self->{INDEXER}->remove($id, $content || $EMPTY_STRING) ;
 	}
 	
-delete $self->{ID_TO_METATDATA}{$id} ;
+delete $self->{ID_TO_METADATA}{$id} ;
 
 return ;
 }
@@ -615,7 +615,7 @@ my $callback =  $arguments{DONE_ONE_FILE_CALLBACK} ;
 
 my %file_information ;
 
-for my $file (keys %{$self->{PATH_TO_METADATA}})
+for my $file (sort keys %{$self->{PATH_TO_METADATA}})
 	{
 	my $t0 = time;
 	my $id = $self->{PATH_TO_METADATA}{$file}{id} ;
@@ -682,16 +682,7 @@ for my $file (keys %{$self->{PATH_TO_METADATA}})
 		{
 		my $id = $self->{PATH_TO_METADATA}{$file}{id};
 		
-		if($self->{USE_POSITIONS})
-			{
-			$self->{INDEXER}->remove($id)   ;
-			}
-		else
-			{
-			$self->{INDEXER}->remove($id, $EMPTY_STRING)   ;
-			}
-			
-		delete $self->{ID_TO_METATDATA}{$id} ;
+		$self->remove_document_with_id($id)   ;
 		
 		push @file_references_removed, $file ;
 		}

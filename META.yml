@@ -1,6 +1,6 @@
 ---
 name: Search-Indexer-Incremental-MD5
-version: 0.04.15
+version: 0.05.18
 author:
   - 'Nadim ibn hamouda el Khemir. <nkh@cpan.org>'
 abstract: Incrementaly index your files
@@ -31,10 +31,10 @@ build_requires:
 provides:
   Search::Indexer::Incremental::MD5:
     file: lib/Search/Indexer/Incremental/MD5.pm
-    version: 0.04
+    version: 0.05
   Search::Indexer::Incremental::MD5::Indexer:
     file: lib/Search/Indexer/Incremental/MD5/Indexer.pm
-    version: 0.01
+    version: 0.02
   Search::Indexer::Incremental::MD5::Language::Perl:
     file: lib/Search/Indexer/Incremental/MD5/Language/Perl.pm
     version: 0.03

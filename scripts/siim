@@ -78,7 +78,7 @@ Let you create and search full text indexed database based on the content of fil
 
 #------------------------------------------------------------------------------------------------------------------------
 
-our $VERSION = '0.02' ;
+our $VERSION = '0.03' ;
 
 use Getopt::Long ;
 use Term::Bash::Completion::Generator ;
@@ -105,7 +105,7 @@ sub siim
 
 #~ I<Arguments> - command line arguments to be parsed by Getop::Long
 
-#~ I<Returns> -  Nothing
+#~ I<Returns> -  0 (zero)
 
 #~ I<Exceptions> - 
 
@@ -122,15 +122,27 @@ sub siim
 my (@arguments) = @_ ;
 my ($options, @files)  = get_options(@arguments) ;
 
-if($options->{completion_script})
+unless(@arguments)
 	{
-	generate_completion_script()  ;
+	display_help()  ;
+	exit(1) ;
+	}
+
+if($options->{completion_script})
+        {
+        generate_completion_script()  ;
+        exit(0) ;
+        }
+
+unless($options->{index_directory})
+        {
+	print {*STDERR} "Error: --index_directory (short -i) is required! Try --help for a complete help\n" ;
 	exit(1) ;
 	}
 
 unless 
 	(
-	$options->{search}|| $options->{add_files}	|| $options->{remove_files}
+	$options->{search}|| $options->{add_files} || $options->{remove_files}
 	|| $options->{check_index } || $options->{delete_database} || $options->{database_information}
 	)
 	{
@@ -140,7 +152,8 @@ unless
 
 if($options->{add_files} + $options->{remove_files} + $options->{check_index } > 1)
 	{
-	croak "Error: only one of 'add_files', 'remove_files', 'check_index' allowed!\n" ;
+	print {*STDERR} "Error: only one of 'add_files', 'remove_files', 'check_index' allowed!\n" ;
+	exit(1) ;
 	}
 	
 if($options->{delete_database})
@@ -152,7 +165,7 @@ if($options->{database_information})
 	{
 	my $information = show_database_information($options->{index_directory}) ;
 	
-	print <<"EOI" ;
+	print {*STDOUT} <<"EOI" ;
 Location: $options->{index_directory}
 Last updated on: $information->{update_date}
 Number of indexed documents: $information->{entries }
@@ -165,7 +178,7 @@ remove_files($options, \@files) if ($options->{remove_files}) ;
 check_index($options) if($options->{check_index});
 search_string($options) if($options->{search}) ;
 
-return ;
+return 0 ;
 }
 
 #------------------------------------------------------------------------------------------------------------------------
@@ -287,7 +300,7 @@ my ($container, @definitions) = get_options_definition() ;
 my $flip = 0 ;
 my @options = grep {++$flip % 2} @definitions ;
 
-print Term::Bash::Completion::Generator::generate_bash_completion_function('siim', [@options], undef, 0) ;
+print {* STDOUT} Term::Bash::Completion::Generator::generate_bash_completion_function('siim', [@options], undef, 0) ;
 }
 
 
