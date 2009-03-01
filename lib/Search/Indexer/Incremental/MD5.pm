@@ -38,7 +38,7 @@ use Sub::Exporter -setup =>
 	};
 	
 use vars qw ($VERSION);
-$VERSION     = '0.05';
+$VERSION     = '0.06';
 }
 
 #----------------------------------------------------------------------------------------------------------
@@ -261,9 +261,6 @@ I<Exceptions> - None
 
 my ($arguments) = @_ ;
 
-my @perl_extra_arguments  ;
-@perl_extra_arguments = get_perl_word_regex_and_stopwords() if($arguments->{perl_mode}) ;
-
 my $searcher 
 	= eval 
 		{
@@ -271,8 +268,6 @@ my $searcher
 			(
 			INDEX_DIRECTORY => $arguments->{index_directory}, 
 			USE_POSITIONS => $arguments->{use_position}, 
-			WORD_REGEX => qr/\w+/smx,
-			@perl_extra_arguments,
 			);
 		} or croak "No full text index found! $@\n" ;
 

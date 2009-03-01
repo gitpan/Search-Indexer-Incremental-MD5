@@ -22,7 +22,7 @@ Let you create and search full text indexed database based on the content of fil
 
 =item Adding files to an index database
 
-  $> find | xargs perl siim -i test -a
+  $> find directories_you_want_indexed | xargs perl siim -i test -a
 
 =item Searching for text
 
@@ -36,7 +36,7 @@ Let you create and search full text indexed database based on the content of fil
 
   $> xargs siim -i test -r file file ...
 
-=item Checking the index database
+=item Checking the index database and displaying the documents it contains
 
   $> siim -p -i test -c
 
@@ -67,6 +67,14 @@ Let you create and search full text indexed database based on the content of fil
   'database_information'  shows some database information
 
 =head1 EXIT STATUS
+
+=over 2
+
+=item 1 - command line error
+
+=item 2 - database or command error
+
+=back
 
 =head1 AUTHOR
 
@@ -155,29 +163,41 @@ if($options->{add_files} + $options->{remove_files} + $options->{check_index } >
 	print {*STDERR} "Error: only one of 'add_files', 'remove_files', 'check_index' allowed!\n" ;
 	exit(1) ;
 	}
-	
-if($options->{delete_database})
-	{
-	delete_indexing_databases($options->{index_directory}) ;
-	}
-	
-if($options->{database_information})
-	{
-	my $information = show_database_information($options->{index_directory}) ;
-	
-	print {*STDOUT} <<"EOI" ;
+
+my $database_run =
+	eval
+		{
+		if($options->{delete_database})
+			{
+			delete_indexing_databases($options->{index_directory}) ;
+			}
+			
+		if($options->{database_information})
+			{
+			my $information = show_database_information($options->{index_directory}) ;
+			
+			print {*STDOUT} <<"EOI" ;
 Location: $options->{index_directory}
 Last updated on: $information->{update_date}
 Number of indexed documents: $information->{entries }
 Database size: $information->{size} bytes
 EOI
+			}
+			
+		add_files($options, \@files) if($options->{add_files}) ;
+		remove_files($options, \@files) if ($options->{remove_files}) ;
+		check_index($options) if($options->{check_index});
+		search_string($options) if($options->{search}) ;
+		
+		'database_run_ok' ;
+		} ;
+
+if($EVAL_ERROR || ! defined $database_run)
+	{
+	print {*STDERR} $EVAL_ERROR ;
+	exit(2) ;
 	}
 	
-add_files($options, \@files) if($options->{add_files}) ;
-remove_files($options, \@files) if ($options->{remove_files}) ;
-check_index($options) if($options->{check_index});
-search_string($options) if($options->{search}) ;
-
 return 0 ;
 }
 
@@ -212,7 +232,7 @@ my @definitions =
 	'h|help' => \&display_help,
 	'i|index_directory=s' => \$container->{index_directory},
 	'a|add_files' => \$container->{add_files},
-	'maximum_document_size' => \$container->{maximum_document_size},
+	'maximum_document_size=i' => \$container->{maximum_document_size},
 	'r|remove_files' => \$container->{remove_files},
 	'c|check_index' => \$container->{check_index}, 
 	's|search=s' => \$container->{search},
@@ -279,6 +299,8 @@ sub display_help
 my ($this_script) = ($PROGRAM_NAME =~m/(.*)/sxm ) ;
 
 print {*STDERR} `perldoc $this_script`  or croak 'Error: Can\'t display help!' ; ## no critic (InputOutput::ProhibitBacktickOperators)
+
+return ;
 }
 
 #---------------------------------------------------------------------------------------------------------
@@ -301,6 +323,8 @@ my $flip = 0 ;
 my @options = grep {++$flip % 2} @definitions ;
 
 print {* STDOUT} Term::Bash::Completion::Generator::generate_bash_completion_function('siim', [@options], undef, 0) ;
+
+return ;
 }
 
 

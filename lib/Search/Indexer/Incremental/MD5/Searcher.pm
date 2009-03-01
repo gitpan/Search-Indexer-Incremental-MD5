@@ -17,7 +17,7 @@ use Sub::Exporter -setup =>
 	};
 	
 use vars qw ($VERSION);
-$VERSION     = '0.01';
+$VERSION     = '0.02';
 }
 
 #----------------------------------------------------------------------------------------------------------
@@ -136,9 +136,8 @@ return
 					(
 					writeMode => 0,
 					dir       => $index_directory,
-					wregex    => $arguments{WORD_REGEX},
-					preMatch  => '[[',
-					postMatch => ']]',
+					#~ preMatch  => '[[',
+					#~ postMatch => ']]',
 					) ,
 					
 		ID_TO_METADATA => \%id_to_metadata,
@@ -147,6 +146,34 @@ return
 		}, $class ;
 }
 
+#----------------------------------------------------------------------------------------------------------
+
+sub words
+{
+
+=head2 words( $prefix)
+
+Returns an array reference containing words starting with $prefix
+
+I<Arguments>
+
+=over 2 
+
+=item *  $prefix  - String -  only words starting with $prefix will be returned
+
+=back
+
+I<Returns> - An array reference containing the words starting with $prefix
+
+I<Exceptions> - No full text index found
+
+=cut
+
+my ($self, $prefix) = @_ ;
+
+return $self->{INDEXER}->words($prefix) ;
+}
+	
 #----------------------------------------------------------------------------------------------------------
 
 sub search

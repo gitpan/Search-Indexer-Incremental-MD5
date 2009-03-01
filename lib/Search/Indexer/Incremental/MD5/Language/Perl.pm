@@ -100,15 +100,15 @@ I<Exceptions> - None
 
 =cut
 
-my $id_regex = ## no critic (RequireBracesForMultiline)
+my $id_regex =
 	qr{
 	(?![0-9])       # don't start with a digit
 	\w\w+           # start with 2 or more word chars ..
 	 (?:::\w+)*      # .. and  possibly ::some::more::components
 	}smx; 
 
-my $word_regex = ## no critic (RequireBracesForMultiline)
-	qr/
+my $word_regex =
+	qr{
   	    (?:                # either a Perl variable:
 	    (?:\$\#?|\@|\%)    #   initial sigil
 	    (?:                #     followed by
@@ -118,25 +118,25 @@ my $word_regex = ## no critic (RequireBracesForMultiline)
 	       |               #     or
 	       (?:[\#\$](?!\w))#       just '$$' or '$#'
 	       |               #     or
-	       [^{\w\s\$]      #       builtin vars with 1 special char
+	       [^\{\w\s\$]      #       builtin vars with 1 special char
 	     )
 	     |                 # or
 	     $id_regex         # a plain word or module name
-	 )/smx;
-
+	     )
+	}smx;
 
 my @stopwords = 
 	(
 	'a' .. 'z', '_', '0' .. '9',
 	qw/
-	__data__ __end__ $class $indexing_operation
+	__data__ __end__ __file__ __line__ $class $indexing_operation
 	above after all also always an and any are as at
 	be because been before being both but by
 	can cannot could
-	die do don done
+	die do done
 	defined do does doesn
 	each else elsif eq
-	for from
+	for from foreach
 	ge gt
 	has have how
 	if in into is isn it item its
@@ -145,17 +145,15 @@ my @stopwords =
 	many may me method might must my
 	ne new next no nor not
 	of on only or other our
-	package perl pl pm pod push
+	package  pl pm push
 	qq qr qw
 	ref return
-	see set shift should since so some something sub such
-	text than that the their them then these they this those to tr
+	see shift should since so some something sub such
+	than that the their them then these they this those to tr
 	undef unless until up us use used uses using
 	values
 	was we what when which while will with would
 	you your
-	SYNOPSIS DESCRIPTION METHODS  FUNCTIONS 
-	BUGS  AUTHOR  
 	COPYRIGHT  LICENSE 
 	/, 
 	'SEE ALSO',

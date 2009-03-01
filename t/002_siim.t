@@ -1,4 +1,3 @@
-# test
 
 use strict ;
 use warnings ;
@@ -21,9 +20,7 @@ use FindBin;
 use File::Slurp ;
 
 {
-local $Plan = {'completion_script' => 69} ;
-
-## testing exit status
+local $Plan = {'completion_script' => 93} ;
 
 my $generate_completion = "$^X -Mblib scripts/siim --completion_script";
 
@@ -37,9 +34,11 @@ my %tree_structure =
 		stopwords =>['A B C'], # not clear from documentation what format it should have
 		},
 		
-	'file.txt' => ['file_txt a b c'],
+	index_no_access => {},
+		
+	'file.txt' => ['file_txt a b C'],
 	'file.pl' => ['file_pl b c d for while'],
-	'stopwords.txt' => ['a B C'],
+	'stopwords.txt' => ['a b C file_txt'],
 	) ;
 	
 use Directory::Scratch::Structured qw(create_structured_tree) ;
@@ -251,19 +250,95 @@ for my $test_description
 		STDERR => qr/^$/
 		},
 	 
-	# indexing in a more complex way
-		#~ 'stopwords_file=s'      path to files containing stopwords
-		#~ 'maximum_document_size' default is 300 KB
-		#~ 'p|perl_mode'           pre-defined perl stopword list
-			#~ test override
-			
+                {
+                NAME => 'delete_database',
+                EXIT_STATUS => 0,
+                ARGUMENTS => "-i $siim_directory/index --delete_database",
+                STDOUT => qr~~,
+	        STDERR => qr/^$/,
+                },
+	 
+		{
+		NAME => 'limit file size and use stopwords',
+		EXIT_STATUS => 0,
+		ARGUMENTS => 
+			"-i $siim_directory/index -v"
+			. " --maximum_document_size=20 --stopwords_file=$siim_directory/stopwords.txt"
+			. " -a $siim_directory/file.pl $siim_directory/file.txt",
+		STDOUT => qr~^
+				'$siim_directory/file.txt'\ \[id:1\]\ new\ file\ \d.\d{3}\ s.
+				$~smx,
+		STDERR => qr~'$siim_directory/file.pl'\ is\ bigger\ than\ 20\ bytes,\ skipping!~
+		},
+		
+                {
+                NAME => 'delete_database',
+                EXIT_STATUS => 0,
+                ARGUMENTS => "-i $siim_directory/index --delete_database",
+                STDOUT => qr~~,
+	        STDERR => qr/^$/,
+                },
+	 
+		{
+		NAME => 'perl mode',
+		EXIT_STATUS => 0,
+		ARGUMENTS => 
+			"-i $siim_directory/index -v "
+			. " --perl_mode --stopwords_file=$siim_directory/stopwords.txt"
+			. " -a $siim_directory/file.pl $siim_directory/file.txt",
+		STDOUT => qr~^
+				'$siim_directory/file.pl'\ \[id:1\]\ new\ file\ \d.\d{3}\ s.\n
+				'$siim_directory/file.txt'\ \[id:2\]\ new\ file\ \d.\d{3}\ s.
+				$~smx,
+		STDERR => qr~^$~
+		},
 	
 		{
-		NAME => 'checking undefined index',
-		EXIT_STATUS => 1,
+		NAME => 'stopwords_file overridden by perl_mode',
+		EXIT_STATUS => 0, 
+		ARGUMENTS => "-i $siim_directory/index -v -s file_txt",
+		STDOUT => qr~
+		^
+		'$siim_directory/file.txt'\ \[id:2\]\ with\ score\ \d{3}.\n
+		~xsm,
+		STDERR => qr/^$/,
+		},
+		
+		{
+		NAME => 'perl_mode stopwords',
+		EXIT_STATUS => 0, 
+		ARGUMENTS => "-i $siim_directory/index -v -s while",
+		STDOUT => qr~^$~,
+		STDERR => qr/^$/,
+		},
+		
+		{
+		NAME => 'undefined index',
+		EXIT_STATUS => 1, # we want a failure
 		ARGUMENTS => "-c",
 		STDOUT => qr~^$~,
 		STDERR => qr/^Error: --index_directory \(short -i\) is required! Try --help for a complete help/
+		},
+		
+		sub
+		{
+		chmod 0, "$siim_directory/index_no_access" ;
+		},
+		
+		{
+		NAME => 'fail creating index',
+		EXIT_STATUS => 2,
+		ARGUMENTS => "-i $siim_directory/index_no_access -a $siim_directory/file.txt",
+		STDOUT => qr~^$~,
+		STDERR => qr/^Error: opening/
+		},
+		
+		{
+		NAME => 'fail searching index',
+		EXIT_STATUS => 2,
+		ARGUMENTS => "-i $siim_directory/index_no_access -s xxx",
+		STDOUT => qr~^$~,
+		STDERR => qr/^No full text index found!/
 		},
 		
 	)

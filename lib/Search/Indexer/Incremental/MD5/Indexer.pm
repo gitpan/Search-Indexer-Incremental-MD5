@@ -150,7 +150,7 @@ return
 					writeMode => 1,
 					positions => $arguments{USE_POSITIONS},
 					wregex    => $arguments{WORD_REGEX} || qr/\w+/smx,
-					stopwords => $arguments{STOP_WORDS} || [],
+					stopwords => $arguments{STOPWORDS} || [],
 					) ,
 
 		INDEXED_FILES => {},

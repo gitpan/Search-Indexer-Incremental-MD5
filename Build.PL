@@ -145,6 +145,8 @@ my $build = $class->new
 		'Test::Warn' => 0,
 		'Test::Command' => 0,
 		'Directory::Scratch::Structured' => 0,
+		'File::Find::Rule' => 0,
+		'Test::Script::Run' => 0,
 		},
 		
 	requires => 
